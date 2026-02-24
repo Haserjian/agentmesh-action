@@ -1,6 +1,6 @@
 # agentmesh-action
 
-Check lineage coverage of PR commits via AgentMesh episode trailers.
+Check lineage coverage of PR commits via [AgentMesh](https://github.com/Haserjian/agentmesh) episode trailers.
 
 ![lineage](https://img.shields.io/badge/lineage-100%25-brightgreen)
 
