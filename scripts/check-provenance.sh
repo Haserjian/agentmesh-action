@@ -87,21 +87,30 @@ for sha in "${commits[@]}"; do
     w_trailer=$(git log -1 --format='%(trailers:key=AgentMesh-Witness,valueonly)' "$sha" | head -1 | tr -d '[:space:]')
     status="NO_WITNESS_TRAILER"
 
-    if [[ -n "$sig_trailer" || -n "$w_trailer" ]]; then
+    # Presence requires the minimum complete pair (sig + witness hash).
+    # Partial states are malformed and must not count as present/verified.
+    if [[ -n "$sig_trailer" && -n "$w_trailer" ]]; then
       witness_present=$((witness_present + 1))
       set +e
       verify_out=$(agentmesh witness verify "$sha" 2>&1)
       verify_rc=$?
       set -e
 
-      if [[ $verify_rc -eq 0 ]]; then
+      clean=$(printf "%s\n" "$verify_out" | sed -E 's/\x1B\[[0-9;]*[mK]//g')
+      parsed_status=$(printf "%s\n" "$clean" | head -1 | awk '{print $1}')
+
+      if [[ "$parsed_status" == "VERIFIED" ]]; then
         status="VERIFIED"
         witness_verified=$((witness_verified + 1))
       else
-        clean=$(printf "%s\n" "$verify_out" | sed -E 's/\x1B\[[0-9;]*[mK]//g')
-        status=$(printf "%s\n" "$clean" | head -1 | awk '{print $1}')
-        [[ -z "$status" ]] && status="INVALID"
+        status="${parsed_status:-INVALID}"
+        # If parser got nothing and command failed, surface explicit verifier error.
+        if [[ -z "$parsed_status" && $verify_rc -ne 0 ]]; then
+          status="VERIFY_ERROR"
+        fi
       fi
+    elif [[ -n "$sig_trailer" || -n "$w_trailer" ]]; then
+      status="MALFORMED_WITNESS_TRAILERS"
     fi
 
     witness_rows="${witness_rows}| \`${short_sha}\` | ${status} |
