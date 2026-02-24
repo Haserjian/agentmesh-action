@@ -92,9 +92,14 @@ permissions:
 
 ## How It Works
 
-Pure bash + git. No Python, no AgentMesh install, no database. Runs in < 5 seconds.
+Pure bash + git + jq. No Python, no AgentMesh install, no database. Runs in < 5 seconds on `ubuntu-latest` (requires `jq`, pre-installed on GitHub-hosted runners).
 
 1. `git log base..head` to list PR commits
 2. `%(trailers:key=AgentMesh-Episode)` to extract trailers
 3. Count traced vs total, compute coverage
 4. Post results as PR comment + step summary
+
+## Notes
+
+- **Fork PRs**: Comment posting is best-effort. If the token lacks `pull-requests: write` (common for fork PRs), the action warns and continues -- lineage check results still appear in the step summary.
+- **Noisy PRs**: The sticky comment lookup paginates through all comments, so it won't create duplicates even on PRs with 100+ comments.
