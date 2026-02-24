@@ -1,9 +1,17 @@
 name: 'AgentMesh Lineage Check'
-description: 'Check lineage coverage of PR commits via AgentMesh episode trailers'
+description: 'Check PR lineage coverage and optionally verify AgentMesh witness signatures'
 
 inputs:
   require-trailers:
     description: 'If true, exit 1 when coverage < 100%'
+    required: false
+    default: 'false'
+  verify-witness:
+    description: 'If true, verify AgentMesh witness signatures for PR commits'
+    required: false
+    default: 'false'
+  require-witness:
+    description: 'If true, exit 1 when witness coverage < 100% (requires verify-witness=true)'
     required: false
     default: 'false'
   comment-on-pr:
@@ -31,6 +39,15 @@ outputs:
   files-changed:
     description: 'Files changed across PR'
     value: ${{ steps.check.outputs.files-changed }}
+  witness-present:
+    description: 'Commits with witness trailers present'
+    value: ${{ steps.check.outputs.witness-present }}
+  witness-verified:
+    description: 'Commits whose witness signatures verified'
+    value: ${{ steps.check.outputs.witness-verified }}
+  witness-coverage-pct:
+    description: 'Witness verification coverage percentage across PR commits (0-100)'
+    value: ${{ steps.check.outputs.witness-coverage-pct }}
   result:
     description: 'PASS or FAIL'
     value: ${{ steps.check.outputs.result }}
@@ -45,6 +62,17 @@ runs:
       with:
         fetch-depth: 0
 
+    - name: Setup Python for witness verification
+      if: inputs.verify-witness == 'true'
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install AgentMesh witness verifier
+      if: inputs.verify-witness == 'true'
+      shell: bash
+      run: pip install "agentmesh-core[witness]>=0.5.2"
+
     - name: Check provenance trailers
       id: check
       shell: bash
@@ -53,6 +81,8 @@ runs:
         GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         REQUIRE_TRAILERS: ${{ inputs.require-trailers }}
+        VERIFY_WITNESS: ${{ inputs.verify-witness }}
+        REQUIRE_WITNESS: ${{ inputs.require-witness }}
 
     - name: Post PR comment
       if: github.event_name == 'pull_request' && inputs.comment-on-pr == 'true'
