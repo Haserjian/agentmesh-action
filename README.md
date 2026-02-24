@@ -85,6 +85,8 @@ Set `verify-witness: 'true'` to verify cryptographic witness signatures attached
 agentmesh witness verify <commit_sha>
 ```
 
+`verify-witness` mode expects commits produced by AgentMesh builds that emit portable witness payload trailers (v0.6.0+).
+
 If `require-witness: 'true'`, the action fails when verified witness coverage is below 100%.
 
 ## PR Comment Example
