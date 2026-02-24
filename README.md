@@ -19,7 +19,7 @@ jobs:
   lineage:
     runs-on: ubuntu-latest
     steps:
-      - uses: Haserjian/agentmesh-action@v1
+      - uses: Haserjian/agentmesh-action@v2
 ```
 
 ## Inputs
@@ -29,6 +29,8 @@ jobs:
 | `require-trailers` | `false` | Exit 1 when lineage coverage < 100% |
 | `verify-witness` | `false` | Verify signed witness trailers via `agentmesh witness verify` |
 | `require-witness` | `false` | Exit 1 when witness coverage < 100% (requires `verify-witness: true`) |
+| `policy-profile` | `''` | Named preset: `baseline`, `strict`, `enterprise`. Overrides individual flags. |
+| `upload-proof` | `true` | Upload `agentmesh-proof.json` as workflow artifact |
 | `comment-on-pr` | `true` | Post/update sticky PR comment |
 | `github-token` | `${{ github.token }}` | Token for API calls |
 
@@ -46,26 +48,54 @@ jobs:
 | `witness-coverage-pct` | Witness verification coverage percentage (0-100) |
 | `result` | `PASS` or `FAIL` |
 | `badge-url` | shields.io URL for README embedding |
+| `proof-artifact-path` | Path to `agentmesh-proof.json` proof artifact |
 
-## Strict Mode
+## Policy Profiles
 
-Require 100% lineage coverage to pass CI:
+Named presets that configure multiple flags at once:
+
+| Profile | `require-trailers` | `verify-witness` | `require-witness` |
+|---------|-------------------|------------------|-------------------|
+| `baseline` | false | false | false |
+| `strict` | true | true | false |
+| `enterprise` | true | true | true |
 
 ```yaml
-- uses: Haserjian/agentmesh-action@v1
+- uses: Haserjian/agentmesh-action@v2
+  with:
+    policy-profile: 'strict'
+```
+
+Explicit flags override profile defaults when both are provided:
+
+```yaml
+- uses: Haserjian/agentmesh-action@v2
+  with:
+    policy-profile: 'enterprise'
+    require-witness: 'false'  # override: enterprise normally requires witness
+```
+
+Individual flags still work without a profile:
+
+```yaml
+- uses: Haserjian/agentmesh-action@v2
   with:
     require-trailers: 'true'
 ```
 
-Require both lineage and witness verification:
+## Proof Artifact
+
+Every run generates `agentmesh-proof.json` -- a machine-readable record of the provenance check. It includes per-commit episode IDs, witness statuses, policy configuration, metrics, and a deterministic evidence fingerprint.
+
+The artifact is uploaded automatically (disable with `upload-proof: 'false'`). Download it from the workflow run's Artifacts tab, or reference it in downstream jobs:
 
 ```yaml
-- uses: Haserjian/agentmesh-action@v1
-  with:
-    verify-witness: 'true'
-    require-trailers: 'true'
-    require-witness: 'true'
+- uses: Haserjian/agentmesh-action@v2
+  id: lineage
+- run: cat ${{ steps.lineage.outputs.proof-artifact-path }}
 ```
+
+The **evidence fingerprint** is a SHA256 hash of sorted commit SHAs + witness statuses + policy flags. Two runs with the same commits and policy produce the same fingerprint, making it useful for cross-reference and deduplication.
 
 ## What is Lineage Coverage?
 

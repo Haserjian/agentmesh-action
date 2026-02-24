@@ -5,15 +5,23 @@ inputs:
   require-trailers:
     description: 'If true, exit 1 when coverage < 100%'
     required: false
-    default: 'false'
+    default: ''
   verify-witness:
     description: 'If true, verify AgentMesh witness signatures for PR commits'
     required: false
-    default: 'false'
+    default: ''
   require-witness:
     description: 'If true, exit 1 when witness coverage < 100% (requires verify-witness=true)'
     required: false
-    default: 'false'
+    default: ''
+  policy-profile:
+    description: 'Named policy preset: baseline, strict, enterprise. Overrides individual flags unless explicit overrides are set.'
+    required: false
+    default: ''
+  upload-proof:
+    description: 'Upload agentmesh-proof.json as workflow artifact'
+    required: false
+    default: 'true'
   comment-on-pr:
     description: 'Post/update sticky PR comment with results'
     required: false
@@ -54,6 +62,9 @@ outputs:
   badge-url:
     description: 'shields.io badge URL for README embedding'
     value: ${{ steps.check.outputs.badge-url }}
+  proof-artifact-path:
+    description: 'Path to agentmesh-proof.json proof artifact'
+    value: ${{ steps.check.outputs.proof-artifact-path }}
 
 runs:
   using: 'composite'
@@ -83,6 +94,17 @@ runs:
         REQUIRE_TRAILERS: ${{ inputs.require-trailers }}
         VERIFY_WITNESS: ${{ inputs.verify-witness }}
         REQUIRE_WITNESS: ${{ inputs.require-witness }}
+        POLICY_PROFILE: ${{ inputs.policy-profile }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+
+    - name: Upload proof artifact
+      if: inputs.upload-proof == 'true' && steps.check.outputs.proof-artifact-path != ''
+      uses: actions/upload-artifact@v4
+      continue-on-error: true
+      with:
+        name: agentmesh-proof
+        path: ${{ steps.check.outputs.proof-artifact-path }}
+        retention-days: 90
 
     - name: Post PR comment
       if: github.event_name == 'pull_request' && inputs.comment-on-pr == 'true'
