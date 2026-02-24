@@ -161,3 +161,9 @@ Lineage mode is pure bash + git + jq with no AgentMesh install. Witness mode add
 
 - **Fork PRs**: Comment posting is best-effort. If the token lacks `pull-requests: write` (common for fork PRs), the action warns and continues -- lineage check results still appear in the step summary.
 - **Noisy PRs**: The sticky comment lookup paginates through all comments, so it won't create duplicates even on PRs with 100+ comments.
+
+## License
+
+`agentmesh-action` is licensed under Apache-2.0 for current and future development.
+
+Any previously published releases retain the license terms they were published with.
