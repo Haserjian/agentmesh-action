@@ -1,0 +1,64 @@
+name: 'AgentMesh Lineage Check'
+description: 'Check lineage coverage of PR commits via AgentMesh episode trailers'
+
+inputs:
+  require-trailers:
+    description: 'If true, exit 1 when coverage < 100%'
+    required: false
+    default: 'false'
+  comment-on-pr:
+    description: 'Post/update sticky PR comment with results'
+    required: false
+    default: 'true'
+  github-token:
+    description: 'Token for GitHub API calls'
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  commits-total:
+    description: 'Total commits in PR'
+    value: ${{ steps.check.outputs.commits-total }}
+  commits-traced:
+    description: 'Commits with AgentMesh-Episode trailer'
+    value: ${{ steps.check.outputs.commits-traced }}
+  coverage-pct:
+    description: 'Lineage coverage percentage (0-100)'
+    value: ${{ steps.check.outputs.coverage-pct }}
+  unique-episodes:
+    description: 'Count of distinct episode IDs'
+    value: ${{ steps.check.outputs.unique-episodes }}
+  files-changed:
+    description: 'Files changed across PR'
+    value: ${{ steps.check.outputs.files-changed }}
+  result:
+    description: 'PASS or FAIL'
+    value: ${{ steps.check.outputs.result }}
+  badge-url:
+    description: 'shields.io badge URL for README embedding'
+    value: ${{ steps.check.outputs.badge-url }}
+
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Check provenance trailers
+      id: check
+      shell: bash
+      run: bash ${{ github.action_path }}/scripts/check-provenance.sh
+      env:
+        GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        REQUIRE_TRAILERS: ${{ inputs.require-trailers }}
+
+    - name: Post PR comment
+      if: github.event_name == 'pull_request' && inputs.comment-on-pr == 'true'
+      shell: bash
+      run: bash ${{ github.action_path }}/scripts/post-comment.sh
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        COMMENT_BODY_FILE: ${{ steps.check.outputs.comment-body-file }}
