@@ -42,6 +42,11 @@ if [[ "${1:-}" == "witness" && "${2:-}" == "verify" ]]; then
       echo "SIGNATURE_INVALID  Ed25519 signature verification failed"
       exit 1
       ;;
+    hang)
+      sleep "${AGENTMESH_STUB_SLEEP:-2}"
+      echo "VERIFIED  Signed after delay"
+      exit 0
+      ;;
     *)
       echo "UNKNOWN  unsupported mode"
       exit 2
@@ -191,6 +196,52 @@ test_verified_witness_passes_strict() {
   _assert_contains "$outputs" "witness-verified=1"
   _assert_contains "$outputs" "witness-coverage-pct=100"
   _assert_contains "$summary" "VERIFIED"
+
+  rm -rf "$tmp"
+}
+
+test_witness_verify_timeout_fails_strict() {
+  local tmp
+  tmp="$(mktemp -d)"
+  local repo="${tmp}/repo"
+  local bindir="${tmp}/bin"
+  _mkrepo "$repo"
+  _write_stub_agentmesh "$bindir"
+
+  local base
+  base="$(git -C "$repo" rev-parse HEAD)"
+  printf "timeout\n" > "${repo}/timeout.txt"
+  git -C "$repo" add timeout.txt
+  git -C "$repo" commit -q -m $'timeout witness\n\nAgentMesh-Episode: ep_timeout\nAgentMesh-Witness: sha256:deadbeef\nAgentMesh-Sig: fake_sig'
+  local head
+  head="$(git -C "$repo" rev-parse HEAD)"
+
+  local out="${tmp}/out.txt"
+  local outputs="${tmp}/outputs.txt"
+  local summary="${tmp}/summary.md"
+
+  set +e
+  (
+    cd "$repo"
+    PATH="${bindir}:${PATH}" \
+      AGENTMESH_STUB_MODE=hang \
+      AGENTMESH_STUB_SLEEP=2 \
+      WITNESS_VERIFY_TIMEOUT_S=1 \
+      GITHUB_BASE_SHA="$base" \
+      GITHUB_HEAD_SHA="$head" \
+      VERIFY_WITNESS=true \
+      REQUIRE_WITNESS=true \
+      GITHUB_OUTPUT="$outputs" \
+      GITHUB_STEP_SUMMARY="$summary" \
+      bash "$CHECK_SCRIPT" >"$out" 2>&1
+  )
+  local rc=$?
+  set -e
+
+  [[ $rc -ne 0 ]] || { echo "expected strict failure for verifier timeout"; cat "$out"; exit 1; }
+  _assert_contains "$outputs" "witness-present=1"
+  _assert_contains "$outputs" "witness-verified=0"
+  _assert_contains "$summary" "VERIFY_TIMEOUT"
 
   rm -rf "$tmp"
 }
@@ -387,9 +438,10 @@ test_explicit_flag_overrides_profile() {
 test_partial_trailers_fail_strict
 test_missing_witness_does_not_count_verified
 test_verified_witness_passes_strict
+test_witness_verify_timeout_fails_strict
 test_proof_artifact_generated
 test_proof_artifact_fingerprint_stable
 test_profile_strict_sets_flags
 test_explicit_flag_overrides_profile
 
-echo "ok: check-provenance regression tests passed (7/7)"
+echo "ok: check-provenance regression tests passed (8/8)"

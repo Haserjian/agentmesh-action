@@ -7,6 +7,7 @@ set -euo pipefail
 
 MARKER="<!-- agentmesh-provenance -->"
 TRAILER_KEY="AgentMesh-Episode"
+WITNESS_VERIFY_TIMEOUT_S="${WITNESS_VERIFY_TIMEOUT_S:-30}"
 
 # --- Policy profile resolution ---
 # Profiles set base defaults. Non-empty env vars override profile defaults.
@@ -47,6 +48,45 @@ if [[ "${REQUIRE_WITNESS}" == "true" && "${VERIFY_WITNESS}" != "true" ]]; then
   echo "::error::require-witness=true requires verify-witness=true"
   exit 1
 fi
+
+_run_witness_verify() {
+  local sha="$1"
+  if command -v python3 >/dev/null 2>&1; then
+  python3 - "$WITNESS_VERIFY_TIMEOUT_S" "$sha" <<'PY'
+import subprocess
+import sys
+
+timeout_s = int(sys.argv[1])
+sha = sys.argv[2]
+
+try:
+  proc = subprocess.run(
+    ["agentmesh", "witness", "verify", sha],
+    capture_output=True,
+    text=True,
+    timeout=timeout_s,
+  )
+except subprocess.TimeoutExpired as exc:
+  if exc.stdout:
+    sys.stdout.write(exc.stdout)
+  if exc.stderr:
+    sys.stderr.write(exc.stderr)
+  sys.stderr.write(
+    f"VERIFY_TIMEOUT  agentmesh witness verify timed out after {timeout_s}s\n"
+  )
+  raise SystemExit(124)
+
+if proc.stdout:
+  sys.stdout.write(proc.stdout)
+if proc.stderr:
+  sys.stderr.write(proc.stderr)
+raise SystemExit(proc.returncode)
+PY
+  return $?
+  fi
+
+  agentmesh witness verify "$sha"
+}
 
 # --- Gather commits ---
 commits=()
@@ -124,7 +164,7 @@ for sha in "${commits[@]}"; do
     if [[ -n "$sig_trailer" && -n "$w_trailer" ]]; then
       witness_present=$((witness_present + 1))
       set +e
-      verify_out=$(agentmesh witness verify "$sha" 2>&1)
+      verify_out=$(_run_witness_verify "$sha" 2>&1)
       verify_rc=$?
       set -e
 
