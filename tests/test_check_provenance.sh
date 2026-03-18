@@ -31,7 +31,7 @@ if [[ "${1:-}" == "witness" && "${2:-}" == "verify" ]]; then
   case "${AGENTMESH_STUB_MODE:-verified}" in
     verified)
       if $json_mode; then
-        echo "{\"schema_version\":\"1\",\"commit\":\"${sha}\",\"status\":\"VERIFIED\",\"details\":\"Signed by stub\",\"verified\":true}"
+        echo "{\"schema_version\":\"2\",\"commit\":\"${sha}\",\"execution_status\":\"ok\",\"verification_status\":\"verified\",\"reason_codes\":[],\"status\":\"VERIFIED\",\"details\":\"Signed by stub\",\"verified\":true}"
       else
         echo "VERIFIED  Signed by stub"
       fi
@@ -39,7 +39,7 @@ if [[ "${1:-}" == "witness" && "${2:-}" == "verify" ]]; then
       ;;
     missing)
       if $json_mode; then
-        echo "{\"schema_version\":\"1\",\"commit\":\"${sha}\",\"status\":\"WITNESS_MISSING\",\"details\":\"Witness not found in sidecar\",\"verified\":false}"
+        echo "{\"schema_version\":\"2\",\"commit\":\"${sha}\",\"execution_status\":\"ok\",\"verification_status\":\"no_witness\",\"reason_codes\":[\"WITNESS_MISSING\"],\"status\":\"WITNESS_MISSING\",\"details\":\"Witness not found in sidecar\",\"verified\":false}"
       else
         echo "WITNESS_MISSING  Witness not found in sidecar"
       fi
@@ -47,7 +47,7 @@ if [[ "${1:-}" == "witness" && "${2:-}" == "verify" ]]; then
       ;;
     notrailers)
       if $json_mode; then
-        echo "{\"schema_version\":\"1\",\"commit\":\"${sha}\",\"status\":\"NO_TRAILERS\",\"details\":\"No witness trailers found\",\"verified\":false}"
+        echo "{\"schema_version\":\"2\",\"commit\":\"${sha}\",\"execution_status\":\"ok\",\"verification_status\":\"no_witness\",\"reason_codes\":[\"NO_TRAILERS\"],\"status\":\"NO_TRAILERS\",\"details\":\"No witness trailers found\",\"verified\":false}"
       else
         echo "NO_TRAILERS  No witness trailers found"
       fi
@@ -55,7 +55,7 @@ if [[ "${1:-}" == "witness" && "${2:-}" == "verify" ]]; then
       ;;
     invalid)
       if $json_mode; then
-        echo "{\"schema_version\":\"1\",\"commit\":\"${sha}\",\"status\":\"SIGNATURE_INVALID\",\"details\":\"Ed25519 signature verification failed\",\"verified\":false}"
+        echo "{\"schema_version\":\"2\",\"commit\":\"${sha}\",\"execution_status\":\"ok\",\"verification_status\":\"not_verified\",\"reason_codes\":[\"SIGNATURE_INVALID\"],\"status\":\"SIGNATURE_INVALID\",\"details\":\"Ed25519 signature verification failed\",\"verified\":false}"
       else
         echo "SIGNATURE_INVALID  Ed25519 signature verification failed"
       fi
@@ -72,7 +72,7 @@ if [[ "${1:-}" == "witness" && "${2:-}" == "verify" ]]; then
       ;;
     *)
       if $json_mode; then
-        echo "{\"schema_version\":\"1\",\"commit\":\"${sha}\",\"status\":\"UNKNOWN\",\"details\":\"unsupported mode\",\"verified\":false}"
+        echo "{\"schema_version\":\"2\",\"commit\":\"${sha}\",\"execution_status\":\"ok\",\"verification_status\":\"not_verified\",\"reason_codes\":[\"UNKNOWN\"],\"status\":\"UNKNOWN\",\"details\":\"unsupported mode\",\"verified\":false}"
       else
         echo "UNKNOWN  unsupported mode"
       fi
@@ -323,6 +323,14 @@ test_proof_artifact_generated() {
   local fp
   fp=$(jq -r '.evidence_fingerprint' "$artifact")
   [[ "$fp" != "null" && "$fp" != "" && "$fp" != "unavailable" ]] || { echo "missing fingerprint: ${fp}"; exit 1; }
+
+  # v1.1: verify structured coverage object with denominator kinds
+  local cov_lineage_denom
+  cov_lineage_denom=$(jq -r '.coverage.lineage.denominator_kind' "$artifact")
+  [[ "$cov_lineage_denom" == "all_pr_commits" ]] || { echo "unexpected lineage denominator_kind: ${cov_lineage_denom}"; exit 1; }
+  local cov_lineage_num
+  cov_lineage_num=$(jq '.coverage.lineage.numerator' "$artifact")
+  [[ "$cov_lineage_num" == "1" ]] || { echo "unexpected lineage numerator: ${cov_lineage_num}"; exit 1; }
 
   rm -rf "$tmp"
 }

@@ -174,14 +174,21 @@ for sha in "${commits[@]}"; do
       set -e
 
       if command -v python3 >/dev/null 2>&1 && [[ -n "$verify_json" ]]; then
-        status=$(python3 -c "
+        # Extract structured fields from JSON. Falls back to PARSE_ERROR on any failure.
+        _parsed=$(python3 -c "
 import json, sys
 try:
     d = json.loads(sys.argv[1])
-    print(d.get('status', 'PARSE_ERROR'))
+    s = d.get('status', 'PARSE_ERROR')
+    vs = d.get('verification_status', '')
+    es = d.get('execution_status', '')
+    rc = ','.join(d.get('reason_codes', []))
+    print(f'{s}\t{vs}\t{es}\t{rc}')
 except Exception:
-    print('PARSE_ERROR')
-" "$verify_json" 2>/dev/null || echo "PARSE_ERROR")
+    print('PARSE_ERROR\t\t\t')
+" "$verify_json" 2>/dev/null || echo "PARSE_ERROR			")
+        status=$(echo "$_parsed" | cut -f1)
+        # reason_codes available in field 4 if needed downstream
       else
         status="VERIFY_ERROR"
       fi
@@ -467,6 +474,11 @@ jq -n \
       witness_verified: $wv,
       witness_coverage_pct: $wcpct,
       witness_eligible_pct: $wepct
+    },
+    coverage: {
+      lineage: {numerator: $ctr, denominator: $ct, denominator_kind: "all_pr_commits"},
+      witness_all: {numerator: $wv, denominator: $ct, denominator_kind: "all_pr_commits"},
+      witness_eligible: {numerator: $wv, denominator: $wp, denominator_kind: "witness_present_commits"}
     },
     commits: $commits,
     result: $res,
