@@ -24,31 +24,58 @@ _write_stub_agentmesh() {
 set -euo pipefail
 
 if [[ "${1:-}" == "witness" && "${2:-}" == "verify" ]]; then
+  sha="${3:-HEAD}"
+  json_mode=false
+  [[ "${4:-}" == "--json" || "${3:-}" == "--json" ]] && json_mode=true
+
   case "${AGENTMESH_STUB_MODE:-verified}" in
     verified)
-      echo "VERIFIED  Signed by stub"
+      if $json_mode; then
+        echo "{\"schema_version\":\"1\",\"commit\":\"${sha}\",\"status\":\"VERIFIED\",\"details\":\"Signed by stub\",\"verified\":true}"
+      else
+        echo "VERIFIED  Signed by stub"
+      fi
       exit 0
       ;;
     missing)
-      # Simulates the CLI behavior that can still exit 0.
-      echo "WITNESS_MISSING  Witness not found in sidecar"
+      if $json_mode; then
+        echo "{\"schema_version\":\"1\",\"commit\":\"${sha}\",\"status\":\"WITNESS_MISSING\",\"details\":\"Witness not found in sidecar\",\"verified\":false}"
+      else
+        echo "WITNESS_MISSING  Witness not found in sidecar"
+      fi
       exit 0
       ;;
     notrailers)
-      echo "NO_TRAILERS  No witness trailers found"
+      if $json_mode; then
+        echo "{\"schema_version\":\"1\",\"commit\":\"${sha}\",\"status\":\"NO_TRAILERS\",\"details\":\"No witness trailers found\",\"verified\":false}"
+      else
+        echo "NO_TRAILERS  No witness trailers found"
+      fi
       exit 0
       ;;
     invalid)
-      echo "SIGNATURE_INVALID  Ed25519 signature verification failed"
+      if $json_mode; then
+        echo "{\"schema_version\":\"1\",\"commit\":\"${sha}\",\"status\":\"SIGNATURE_INVALID\",\"details\":\"Ed25519 signature verification failed\",\"verified\":false}"
+      else
+        echo "SIGNATURE_INVALID  Ed25519 signature verification failed"
+      fi
       exit 1
       ;;
     hang)
       sleep "${AGENTMESH_STUB_SLEEP:-2}"
-      echo "VERIFIED  Signed after delay"
+      if $json_mode; then
+        echo "{\"schema_version\":\"1\",\"commit\":\"${sha}\",\"status\":\"VERIFIED\",\"details\":\"Signed after delay\",\"verified\":true}"
+      else
+        echo "VERIFIED  Signed after delay"
+      fi
       exit 0
       ;;
     *)
-      echo "UNKNOWN  unsupported mode"
+      if $json_mode; then
+        echo "{\"schema_version\":\"1\",\"commit\":\"${sha}\",\"status\":\"UNKNOWN\",\"details\":\"unsupported mode\",\"verified\":false}"
+      else
+        echo "UNKNOWN  unsupported mode"
+      fi
       exit 2
       ;;
   esac

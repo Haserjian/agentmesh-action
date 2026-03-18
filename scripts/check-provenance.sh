@@ -49,10 +49,15 @@ if [[ "${REQUIRE_WITNESS}" == "true" && "${VERIFY_WITNESS}" != "true" ]]; then
   exit 1
 fi
 
-_run_witness_verify() {
+_run_witness_verify_json() {
+  # Returns JSON on stdout. Sets _verify_rc to the exit code.
   local sha="$1"
+  local json_out=""
+  _verify_rc=0
+
   if command -v python3 >/dev/null 2>&1; then
-  python3 - "$WITNESS_VERIFY_TIMEOUT_S" "$sha" <<'PY'
+  json_out=$(python3 - "$WITNESS_VERIFY_TIMEOUT_S" "$sha" <<'PY'
+import json
 import subprocess
 import sys
 
@@ -61,31 +66,30 @@ sha = sys.argv[2]
 
 try:
   proc = subprocess.run(
-    ["agentmesh", "witness", "verify", sha],
+    ["agentmesh", "witness", "verify", sha, "--json"],
     capture_output=True,
     text=True,
     timeout=timeout_s,
   )
-except subprocess.TimeoutExpired as exc:
-  if exc.stdout:
-    sys.stdout.write(exc.stdout)
-  if exc.stderr:
-    sys.stderr.write(exc.stderr)
-  sys.stderr.write(
-    f"VERIFY_TIMEOUT  agentmesh witness verify timed out after {timeout_s}s\n"
-  )
+except subprocess.TimeoutExpired:
+  print(json.dumps({"schema_version": "1", "commit": sha,
+                     "status": "VERIFY_TIMEOUT", "details": f"timed out after {timeout_s}s",
+                     "verified": False}))
   raise SystemExit(124)
 
+# Emit stdout (should be JSON)
 if proc.stdout:
   sys.stdout.write(proc.stdout)
 if proc.stderr:
   sys.stderr.write(proc.stderr)
 raise SystemExit(proc.returncode)
 PY
-  return $?
+  ) || _verify_rc=$?
+  else
+    json_out=$(agentmesh witness verify "$sha" --json 2>/dev/null) || _verify_rc=$?
   fi
 
-  agentmesh witness verify "$sha"
+  echo "$json_out"
 }
 
 # --- Gather commits ---
@@ -163,23 +167,27 @@ for sha in "${commits[@]}"; do
     # Partial states are malformed and must not count as present/verified.
     if [[ -n "$sig_trailer" && -n "$w_trailer" ]]; then
       witness_present=$((witness_present + 1))
+
+      # Use structured JSON output — no text parsing.
       set +e
-      verify_out=$(_run_witness_verify "$sha" 2>&1)
-      verify_rc=$?
+      verify_json=$(_run_witness_verify_json "$sha")
       set -e
 
-      clean=$(printf "%s\n" "$verify_out" | sed -E 's/\x1B\[[0-9;]*[mK]//g')
-      parsed_status=$(printf "%s\n" "$clean" | head -1 | awk '{print $1}')
-
-      if [[ "$parsed_status" == "VERIFIED" ]]; then
-        status="VERIFIED"
-        witness_verified=$((witness_verified + 1))
+      if command -v python3 >/dev/null 2>&1 && [[ -n "$verify_json" ]]; then
+        status=$(python3 -c "
+import json, sys
+try:
+    d = json.loads(sys.argv[1])
+    print(d.get('status', 'PARSE_ERROR'))
+except Exception:
+    print('PARSE_ERROR')
+" "$verify_json" 2>/dev/null || echo "PARSE_ERROR")
       else
-        status="${parsed_status:-INVALID}"
-        # If parser got nothing and command failed, surface explicit verifier error.
-        if [[ -z "$parsed_status" && $verify_rc -ne 0 ]]; then
-          status="VERIFY_ERROR"
-        fi
+        status="VERIFY_ERROR"
+      fi
+
+      if [[ "$status" == "VERIFIED" ]]; then
+        witness_verified=$((witness_verified + 1))
       fi
     elif [[ -n "$sig_trailer" || -n "$w_trailer" ]]; then
       status="MALFORMED_WITNESS_TRAILERS"
@@ -197,8 +205,14 @@ coverage_pct=$((commits_traced * 100 / commits_total))
 
 if [[ "${VERIFY_WITNESS}" == "true" ]]; then
   witness_coverage_pct=$((witness_verified * 100 / commits_total))
+  if [[ $witness_present -gt 0 ]]; then
+    witness_eligible_pct=$((witness_verified * 100 / witness_present))
+  else
+    witness_eligible_pct=0
+  fi
 else
   witness_coverage_pct=0
+  witness_eligible_pct=0
 fi
 
 # --- Badge URL ---
@@ -422,6 +436,7 @@ jq -n \
   --argjson wp "$witness_present" \
   --argjson wv "$witness_verified" \
   --argjson wcpct "$witness_coverage_pct" \
+  --argjson wepct "$witness_eligible_pct" \
   --argjson commits "$_commits_json" \
   --arg res "$result" \
   --argjson reasons "$_fail_reasons" \
@@ -450,7 +465,8 @@ jq -n \
       files_changed: $fc,
       witness_present: $wp,
       witness_verified: $wv,
-      witness_coverage_pct: $wcpct
+      witness_coverage_pct: $wcpct,
+      witness_eligible_pct: $wepct
     },
     commits: $commits,
     result: $res,
@@ -469,6 +485,7 @@ fi  # jq available
   echo "witness-present=${witness_present}"
   echo "witness-verified=${witness_verified}"
   echo "witness-coverage-pct=${witness_coverage_pct}"
+  echo "witness-eligible-pct=${witness_eligible_pct}"
   echo "result=${result}"
   echo "badge-url=${badge_url}"
   echo "comment-body-file=${comment_file}"
