@@ -470,6 +470,105 @@ test_explicit_flag_overrides_profile() {
   rm -rf "$tmp"
 }
 
+test_strict_profile_resolves_verify_witness_without_explicit_flag() {
+  # Regression: strict profile must enable witness verification even when
+  # VERIFY_WITNESS is empty (simulating action.yml passing '' for unset input).
+  # Before fix: action.yml only installed verifier when verify-witness=='true',
+  # but check-provenance.sh resolved VERIFY_WITNESS=true via profile. This
+  # mismatch meant the verifier was missing at runtime.
+  local tmp
+  tmp="$(mktemp -d)"
+  local repo="${tmp}/repo"
+  local bindir="${tmp}/bin"
+  _mkrepo "$repo"
+  _write_stub_agentmesh "$bindir"
+
+  local base
+  base="$(git -C "$repo" rev-parse HEAD)"
+  printf "h\n" > "${repo}/h.txt"
+  git -C "$repo" add h.txt
+  git -C "$repo" commit -q -m $'strict-no-flag\n\nAgentMesh-Episode: ep_noflag\nAgentMesh-Witness: sha256:abc123\nAgentMesh-Sig: sig_abc'
+  local head
+  head="$(git -C "$repo" rev-parse HEAD)"
+
+  local out="${tmp}/out.txt"
+  local outputs="${tmp}/outputs.txt"
+  local summary="${tmp}/summary.md"
+  local proof_dir="${tmp}/proof"
+  mkdir -p "$proof_dir"
+
+  (
+    cd "$repo"
+    PATH="${bindir}:${PATH}" \
+      AGENTMESH_STUB_MODE=verified \
+      GITHUB_BASE_SHA="$base" \
+      GITHUB_HEAD_SHA="$head" \
+      POLICY_PROFILE=strict \
+      GITHUB_OUTPUT="$outputs" \
+      GITHUB_STEP_SUMMARY="$summary" \
+      RUNNER_TEMP="$proof_dir" \
+      bash "$CHECK_SCRIPT" >"$out" 2>&1
+  )
+
+  # Key assertion: VERIFY_WITNESS was resolved to true by profile, not by explicit flag
+  _assert_contains "$outputs" "witness-verified=1"
+  _assert_contains "$outputs" "result=PASS"
+
+  # Verify proof artifact records the profile
+  local vw
+  vw=$(jq '.policy.verify_witness' "${proof_dir}/agentmesh-proof.json")
+  [[ "$vw" == "true" ]] || { echo "strict profile did not resolve verify_witness: ${vw}"; exit 1; }
+
+  rm -rf "$tmp"
+}
+
+test_enterprise_profile_resolves_verify_and_require_witness() {
+  # Enterprise profile must enable both verify-witness and require-witness
+  # without explicit flags.
+  local tmp
+  tmp="$(mktemp -d)"
+  local repo="${tmp}/repo"
+  local bindir="${tmp}/bin"
+  _mkrepo "$repo"
+  _write_stub_agentmesh "$bindir"
+
+  local base
+  base="$(git -C "$repo" rev-parse HEAD)"
+  printf "i\n" > "${repo}/i.txt"
+  git -C "$repo" add i.txt
+  git -C "$repo" commit -q -m $'enterprise-test\n\nAgentMesh-Episode: ep_ent\nAgentMesh-Witness: sha256:def456\nAgentMesh-Sig: sig_def'
+  local head
+  head="$(git -C "$repo" rev-parse HEAD)"
+
+  local out="${tmp}/out.txt"
+  local outputs="${tmp}/outputs.txt"
+  local summary="${tmp}/summary.md"
+  local proof_dir="${tmp}/proof"
+  mkdir -p "$proof_dir"
+
+  (
+    cd "$repo"
+    PATH="${bindir}:${PATH}" \
+      AGENTMESH_STUB_MODE=verified \
+      GITHUB_BASE_SHA="$base" \
+      GITHUB_HEAD_SHA="$head" \
+      POLICY_PROFILE=enterprise \
+      GITHUB_OUTPUT="$outputs" \
+      GITHUB_STEP_SUMMARY="$summary" \
+      RUNNER_TEMP="$proof_dir" \
+      bash "$CHECK_SCRIPT" >"$out" 2>&1
+  )
+
+  _assert_contains "$outputs" "witness-verified=1"
+  _assert_contains "$outputs" "result=PASS"
+
+  local rw
+  rw=$(jq '.policy.require_witness' "${proof_dir}/agentmesh-proof.json")
+  [[ "$rw" == "true" ]] || { echo "enterprise profile did not resolve require_witness: ${rw}"; exit 1; }
+
+  rm -rf "$tmp"
+}
+
 test_partial_trailers_fail_strict
 test_missing_witness_does_not_count_verified
 test_verified_witness_passes_strict
@@ -478,5 +577,7 @@ test_proof_artifact_generated
 test_proof_artifact_fingerprint_stable
 test_profile_strict_sets_flags
 test_explicit_flag_overrides_profile
+test_strict_profile_resolves_verify_witness_without_explicit_flag
+test_enterprise_profile_resolves_verify_and_require_witness
 
-echo "ok: check-provenance regression tests passed (8/8)"
+echo "ok: check-provenance regression tests passed (10/10)"

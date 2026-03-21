@@ -74,13 +74,13 @@ runs:
         fetch-depth: 0
 
     - name: Setup Python for witness verification
-      if: inputs.verify-witness == 'true'
+      if: inputs.verify-witness == 'true' || inputs.policy-profile == 'strict' || inputs.policy-profile == 'enterprise'
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
 
     - name: Install AgentMesh witness verifier
-      if: inputs.verify-witness == 'true'
+      if: inputs.verify-witness == 'true' || inputs.policy-profile == 'strict' || inputs.policy-profile == 'enterprise'
       shell: bash
       run: pip install "agentmesh-core[witness]>=0.6.0"
 
